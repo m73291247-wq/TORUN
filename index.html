@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="bn"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>আমাদের গ্রাম</title>
+<style>
+:root{--bg:#f2f6f1;--card:#fff;--ink:#16241f;--mute:#5d6e67;--line:#d8e2da;--g:#1f5e4b;--gt:#fff;--m:#e6a23a;--mine:#d9efe3;--r:#b4422f}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1a16;--card:#18271f;--ink:#e8f1ec;--mute:#9bb0a6;--line:#2a3d34;--g:#4fb08f;--gt:#05150f;--mine:#1f3d30;--r:#e07a66}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans Bengali",system-ui,sans-serif}
+#app{max-width:480px;margin:0 auto;height:100%;display:flex;flex-direction:column}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--g);color:var(--gt);font-weight:700}
+.badge{font-size:12px;padding:2px 10px;border-radius:99px;background:var(--m);color:#2b1c00}
+main{flex:1;overflow-y:auto;padding:14px}
+nav{display:flex;border-top:1px solid var(--line);background:var(--card)}
+nav button{flex:1;padding:12px 4px;border:0;background:none;color:var(--mute);font:inherit;font-size:14px;border-bottom:3px solid transparent}
+nav .on{color:var(--g);border-bottom-color:var(--m);font-weight:700}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit;margin:4px 0 10px}
+.p{background:var(--g);color:var(--gt);border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:700;width:100%}
+.s{background:none;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:5px 10px;font:inherit;font-size:14px}
+.d{color:var(--r);border-color:var(--r)}
+.msg{max-width:82%;padding:8px 12px;border-radius:14px;margin:6px 0;background:var(--card);border:1px solid var(--line);word-wrap:break-word}
+.me{margin-left:auto;background:var(--mine)}
+small,.mute{color:var(--mute);font-size:13px}small{display:block}
+.row{display:flex;gap:8px}.row input{margin:0}.row .p{width:auto}
+.err{color:var(--r);font-size:14px;min-height:20px}
+</style></head>
+<body><div id="app"></div>
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import{getAuth,RecaptchaVerifier,signInWithPhoneNumber,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import{getFirestore,doc,getDoc,setDoc,updateDoc,deleteDoc,collection,addDoc,query,orderBy,limit,onSnapshot,serverTimestamp,arrayUnion,arrayRemove}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig={apiKey:"AIzaSyC9AHynBdBopEXeVAuNOJv-1_5AaTG708g",authDomain:"toru-62205.firebaseapp.com",projectId:"toru-62205",appId:"1:74170344266:web:28a3f068116003a978d7b3"};
+
+const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb);
+const $=(t,a={},...k)=>{const e=document.createElement(t);for(const x in a)x==='on'?Object.assign(e,a[x]):x==='cls'?e.className=a[x]:e.setAttribute(x,a[x]);k.flat().forEach(c=>e.append(c));return e};
+const app=document.getElementById('app'),RN={admin:'অ্যাডমিন',mod:'মডারেটর',user:'ইউজার'};
+let me=null,tab='chat',unsubs=[],confirmation=null;
+const clear=()=>{unsubs.forEach(u=>u());unsubs=[]};
+const staff=()=>me&&me.role!=='user';
+const errText=e=>({'auth/invalid-phone-number':'নম্বর ঠিক নয়। উদাহরণ: 01711000000','auth/invalid-verification-code':'কোড মেলেনি।','auth/too-many-requests':'অনেকবার চেষ্টা হয়েছে, পরে আবার করুন।','auth/popup-closed-by-user':'লগইন বাতিল হয়েছে।'}[e.code]||'সমস্যা হয়েছে: '+(e.code||e.message));
+
+onAuthStateChanged(auth,async u=>{
+ clear();
+ if(!u){me=null;return login()}
+ try{const s=await getDoc(doc(db,'users',u.uid));
+  if(s.exists()){me={id:u.uid,...s.data()};shell()}else form(u)}
+ catch(e){app.replaceChildren($('main',{},$('p',{cls:'err'},errText(e))))}
+});
+
+function login(){
+ const err=$('div',{cls:'err'}),ph=$('input',{placeholder:'মোবাইল নম্বর (01XXXXXXXXX)',type:'tel'}),code=$('input',{placeholder:'SMS-এর ৬ সংখ্যার কোড',inputmode:'numeric',style:'display:none'});
+ const btn=$('button',{cls:'p'},'কোড পাঠান'),rc=$('div',{id:'rc'});
+ let verifier;
+ btn.onclick=async()=>{err.textContent='';
+  try{
+   if(!confirmation){let n=ph.value.trim().replace(/\s|-/g,'');if(n.startsWith('0'))n='+88'+n;else if(!n.startsWith('+'))n='+'+n;
+    verifier=verifier||new RecaptchaVerifier(auth,rc,{size:'invisible'});
+    confirmation=await signInWithPhoneNumber(auth,n,verifier);code.style.display='';btn.textContent='যাচাই করুন'}
+   else{await confirmation.confirm(code.value.trim());confirmation=null}
+  }catch(e){err.textContent=errText(e);verifier?.clear();verifier=null;if(!code.value)confirmation=null}
+ };
+ const g=$('button',{cls:'s',style:'width:100%;padding:11px',on:{onclick:async()=>{try{await signInWithPopup(auth,new GoogleAuthProvider())}catch(e){err.textContent=errText(e)}}}},'Gmail দিয়ে ঢুকুন');
+ app.replaceChildren($('header',{},'🌾 আমাদের গ্রাম'),$('main',{},$('div',{cls:'card'},$('b',{},'মোবাইল নম্বর দিয়ে'),ph,code,btn,rc),err,g));
+}
+
+function form(u){
+ const f={name:$('input',{placeholder:'নাম',value:u.displayName||''}),phone:$('input',{placeholder:'মোবাইল নম্বর',value:u.phoneNumber||''}),mail:$('input',{placeholder:'জিমেইল',value:u.email||''}),village:$('input',{placeholder:'গ্রামের নাম'})};
+ const err=$('div',{cls:'err'});
+ app.replaceChildren($('header',{},'প্রোফাইল তৈরি'),$('main',{},$('div',{cls:'card'},...Object.values(f),
+  $('small',{},'🔒 এই তথ্য শুধু অ্যাডমিন ও মডারেটর দেখতে পারবেন।'),err,
+  $('button',{cls:'p',on:{onclick:async()=>{
+   if(!f.name.value.trim()||!f.village.value.trim())return err.textContent='নাম ও গ্রামের নাম দিন।';
+   try{await setDoc(doc(db,'users',u.uid),{name:f.name.value.trim(),phone:f.phone.value.trim(),mail:f.mail.value.trim(),village:f.village.value.trim(),role:'user',createdAt:serverTimestamp()});
+    me={id:u.uid,name:f.name.value.trim(),phone:f.phone.value,mail:f.mail.value,village:f.village.value,role:'user'};shell()}catch(e){err.textContent=errText(e)}}}},'নিবন্ধন সম্পন্ন'))));
+}
+
+function shell(){
+ clear();
+ const items=[['chat','💬 চ্যাট'],['post','📰 পোস্ট'],['me','👤 আমি']];if(staff())items.push(['admin','🛡 প্যানেল']);
+ const m=$('main',{});
+ app.replaceChildren($('header',{},'🌾 আমাদের গ্রাম',$('span',{cls:'badge'},RN[me.role])),m,
+  $('nav',{},...items.map(([k,l])=>$('button',{cls:tab===k?'on':'',on:{onclick:()=>{tab=k;shell()}}},l))));
+ ({chat,post,me:profile,admin})[tab](m);
+}
+
+function chat(m){
+ m.style.cssText='display:flex;flex-direction:column';
+ const box=$('div',{style:'flex:1;overflow-y:auto'}),i=$('input',{placeholder:'মেসেজ লিখুন…',style:'margin:0',maxlength:500});
+ unsubs.push(onSnapshot(query(collection(db,'messages'),orderBy('createdAt','desc'),limit(60)),s=>{
+  box.replaceChildren(...s.docs.reverse().map(d=>{const x=d.data();
+   return $('div',{cls:'msg'+(x.uid===me.id?' me':'')},$('small',{},x.name+(x.role!=='user'?' · '+RN[x.role]:'')),x.text,
+    staff()?$('button',{cls:'s d',style:'margin-left:8px;padding:0 6px',on:{onclick:()=>deleteDoc(d.ref)}},'×'):'')}));
+  box.scrollTop=1e6}));
+ const send=async()=>{const t=i.value.trim();if(!t)return;i.value='';await addDoc(collection(db,'messages'),{uid:me.id,name:me.name,role:me.role,text:t,createdAt:serverTimestamp()})};
+ i.onkeydown=e=>e.key==='Enter'&&send();
+ m.append($('small',{style:'margin-bottom:6px'},'🟢 লাইভ চ্যাট'),box,$('div',{cls:'row',style:'margin-top:8px'},i,$('button',{cls:'p',on:{onclick:send}},'পাঠান')));
+}
+
+function post(m){
+ const ta=$('textarea',{rows:3,placeholder:'কী ভাবছেন?',maxlength:2000}),list=$('div');
+ m.append($('div',{cls:'card'},ta,$('button',{cls:'p',on:{onclick:async()=>{const t=ta.value.trim();if(!t)return;ta.value='';await addDoc(collection(db,'posts'),{uid:me.id,name:me.name,village:me.village,role:me.role,text:t,likes:[],createdAt:serverTimestamp()})}}},'পোস্ট করুন')),list);
+ unsubs.push(onSnapshot(query(collection(db,'posts'),orderBy('createdAt','desc'),limit(50)),s=>{
+  list.replaceChildren(...(s.empty?[$('p',{cls:'mute'},'এখনো কোনো পোস্ট নেই।')]:s.docs.map(d=>{const p=d.data(),liked=p.likes.includes(me.id);
+   return $('div',{cls:'card'},$('b',{},p.name),$('div',{cls:'mute'},(p.role!=='user'?RN[p.role]+' · ':'')+p.village),$('p',{style:'white-space:pre-wrap'},p.text),
+    $('div',{cls:'row'},$('button',{cls:'s',on:{onclick:()=>updateDoc(d.ref,{likes:liked?arrayRemove(me.id):arrayUnion(me.id)})}},(liked?'❤️ ':'🤍 ')+p.likes.length),
+     (staff()||p.uid===me.id)?$('button',{cls:'s d',on:{onclick:()=>deleteDoc(d.ref)}},'মুছুন'):''))}))) }));
+}
+
+function profile(m){
+ m.append($('div',{cls:'card'},...[['নাম',me.name],['মোবাইল',me.phone],['জিমেইল',me.mail],['গ্রাম',me.village],['ভূমিকা',RN[me.role]]].flatMap(([a,b])=>[$('small',{},a),$('div',{style:'font-weight:600;margin-bottom:8px'},b||'—')])),
+  $('button',{cls:'s',on:{onclick:()=>signOut(auth)}},'বের হন'));
+}
+
+function admin(m){
+ const list=$('div'),head=$('p',{cls:'mute'});m.append(head,list);
+ unsubs.push(onSnapshot(collection(db,'users'),s=>{
+  const us=s.docs.map(d=>({ref:d.ref,id:d.id,...d.data()}));
+  head.textContent=`অ্যাডমিন ${us.filter(u=>u.role==='admin').length} · মডারেটর ${us.filter(u=>u.role==='mod').length} · মোট ${us.length} জন`;
+  list.replaceChildren(...us.map(u=>{
+   const sel=$('select',{style:'width:auto;margin:0;padding:5px'},...Object.entries(RN).map(([k,v])=>{const o=$('option',{value:k},v);if(u.role===k)o.selected=true;return o}));
+   sel.onchange=()=>updateDoc(u.ref,{role:sel.value});
+   return $('div',{cls:'card'},$('b',{},u.name),$('small',{},'📞 '+u.phone),$('small',{},'✉️ '+u.mail),$('small',{},'🏠 '+u.village),
+    me.role==='admin'&&u.id!==me.id?$('div',{cls:'row',style:'margin-top:8px'},sel,$('button',{cls:'s d',on:{onclick:()=>confirm(u.name+' কে সরাবেন?')&&deleteDoc(u.ref)}},'সরান')):$('span',{cls:'badge'},RN[u.role]))}))}));
+}
+</script></body></html>
